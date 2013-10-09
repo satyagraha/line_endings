@@ -2,166 +2,180 @@ package code.satyagraha.line_endings
 
 import org.smach._
 
-case class LineIteratee() extends Iteratee[Char, String] {
-  import Iteratee._
+object TextScanner {
 
-  private val CR = '\r'
-  private val LF = '\n'
+  case class LineIteratee() extends Iteratee[Char, String] {
+    import Iteratee._
 
-  case class Unknown extends State.Continuation[Char, String] {
+    private val CR = '\r'
+    private val LF = '\n'
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(UnknownAfterCr())
-        case LF => Continue(LinuxAfterLf())
-        case _ => Continue(UnknownLine())
+    trait Position extends State.Continuation[Char, String] {
+      val lineNo: Int
+
+      def decorate(message: String) = {
+        message + " at line " + lineNo
+      }
+
+      def terminate(message: String): Halt[Char, String] = {
+        Halt.fatal(decorate(message))
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Succeed("empty")
-    }
-  }
+    case class Unknown extends Position {
+      val lineNo = 0
 
-  case class UnknownLine extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(UnknownAfterCr(1))
+          case LF => Continue(LinuxAfterLf(2))
+          case _ => Continue(UnknownLine())
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(UnknownAfterCr())
-        case LF => Continue(LinuxAfterLf())
-        case _ => Continue(UnknownLine())
+      def apply(eoi: EndOfInput) = {
+        Succeed("empty")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Halt.fatal("no line terminator")
-    }
-  }
+    case class UnknownLine extends Position {
+      val lineNo = 0
 
-  case class UnknownAfterCr extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(UnknownAfterCr(1))
+          case LF => Continue(LinuxAfterLf(2))
+          case _ => Continue(UnknownLine())
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(MacAfterCr())
-        case LF => Continue(WindowsAfterCrLf())
-        case _ => Continue(MacLine())
+      def apply(eoi: EndOfInput) = {
+        terminate("no line terminator")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Succeed("Mac")
-    }
-  }
+    case class UnknownAfterCr(lineNo: Int) extends Position {
 
-  case class MacAfterCr extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(MacAfterCr(lineNo + 1))
+          case LF => Continue(WindowsAfterCrLf(lineNo))
+          case _ => Continue(MacLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(MacAfterCr())
-        case LF => Halt.fatal("Mac: unexpected lf")
-        case _ => Continue(MacLine())
+      def apply(eoi: EndOfInput) = {
+        Succeed("Mac")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Succeed("Mac")
-    }
-  }
+    case class MacAfterCr(lineNo: Int) extends Position {
 
-  case class MacLine extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(MacAfterCr(lineNo + 1))
+          case LF => terminate("Mac: unexpected lf")
+          case _ => Continue(MacLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(MacAfterCr())
-        case LF => Halt.fatal("Mac: unexpected lf")
-        case _ => Continue(MacLine())
+      def apply(eoi: EndOfInput) = {
+        Succeed("Mac")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Halt.fatal("Mac: missing cr")
-    }
-  }
+    case class MacLine(lineNo: Int) extends Position {
 
-  case class WindowsAfterCrLf extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(MacAfterCr(lineNo + 1))
+          case LF => terminate("Mac: unexpected lf")
+          case _ => Continue(MacLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(WindowsAfterCr())
-        case LF => Halt.fatal("Windows: missing cr before lf")
-        case _ => Continue(WindowsLine())
+      def apply(eoi: EndOfInput) = {
+        terminate(decorate("Mac: missing cr"))
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Succeed("Windows")
-    }
-  }
+    case class WindowsAfterCrLf(lineNo: Int) extends Position {
 
-  case class WindowsLine extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(WindowsAfterCr(lineNo))
+          case LF => terminate("Windows: missing cr before lf")
+          case _ => Continue(WindowsLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Continue(WindowsAfterCr())
-        case LF => Halt.fatal("Windows: missing cr befire lf")
-        case _ => Continue(WindowsLine())
+      def apply(eoi: EndOfInput) = {
+        Succeed("Windows")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Halt.fatal("Windows: missing crlf")
-    }
-  }
+    case class WindowsLine(lineNo: Int) extends Position {
 
-  case class WindowsAfterCr extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => Continue(WindowsAfterCr(lineNo))
+          case LF => terminate("Windows: missing cr befire lf")
+          case _ => Continue(WindowsLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Halt.fatal("Windows: missing lf after cr")
-        case LF => Continue(WindowsAfterCrLf())
-        case _ => Halt.fatal("Windows: missing lf after cr")
+      def apply(eoi: EndOfInput) = {
+        terminate("Windows: missing crlf")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Halt.fatal("Windows: missing lf")
-    }
-  }
+    case class WindowsAfterCr(lineNo: Int) extends Position {
 
-  case class LinuxAfterLf extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => terminate("Windows: missing lf after cr")
+          case LF => Continue(WindowsAfterCrLf(lineNo + 1))
+          case _ => terminate("Windows: missing lf after cr")
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Halt.fatal("Linux: unexpected cr")
-        case LF => Continue(LinuxAfterLf())
-        case _ => Continue(LinuxLine())
+      def apply(eoi: EndOfInput) = {
+        terminate("Windows: missing lf")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Succeed("Linux")
-    }
-  }
+    case class LinuxAfterLf(lineNo: Int) extends Position {
 
-  case class LinuxLine extends State.Continuation[Char, String] {
+      def apply(ch: Char) = {
+        ch match {
+          case CR => terminate("Linux: unexpected cr")
+          case LF => Continue(LinuxAfterLf(lineNo + 1))
+          case _ => Continue(LinuxLine(lineNo))
+        }
+      }
 
-    def apply(ch: Char) = {
-      ch match {
-        case CR => Halt.fatal("Linux: unexpected cr")
-        case LF => Continue(LinuxAfterLf())
-        case _ => Continue(LinuxLine())
+      def apply(eoi: EndOfInput) = {
+        Succeed("Linux")
       }
     }
 
-    def apply(eoi: EndOfInput) = {
-      Halt.fatal("Linux: missing lf")
+    case class LinuxLine(lineNo: Int) extends Position {
+
+      def apply(ch: Char) = {
+        ch match {
+          case CR => terminate("Linux: unexpected cr")
+          case LF => Continue(LinuxAfterLf(lineNo + 1))
+          case _ => Continue(LinuxLine(lineNo))
+        }
+      }
+
+      def apply(eoi: EndOfInput) = {
+        terminate("Linux: missing lf")
+      }
     }
+
+    override def s0 = new Unknown()
   }
-
-  override def s0 = Unknown()
-}
-
-object Main {
 
   def getLineTermination(text: Seq[Char]): String = {
     val li = LineIteratee()
@@ -177,8 +191,12 @@ object Main {
     res
   }
 
+}
+
+object Main {
+
   val inp = List('\n', 'a', 'b', 'c')
-  println("res: " + getLineTermination(inp))
+  println("res: " + TextScanner.getLineTermination(inp))
 
   def main(args: Array[String]): Unit = {
 
