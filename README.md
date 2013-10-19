@@ -1,6 +1,6 @@
 # line_endings
 
-Provides a report of line endings (and line ending anomalies) for a directory.
+Provides a report of line endings (and line ending anomalies) for a directory tree.
 
 The primary application of this project is when preparing an Eclipse project for publication on GitHub. 
 There are a fair number of issues which can arise when mixed or inconsistent line endings occur
