@@ -33,9 +33,9 @@ object Main {
     val filesInfo = filesInfoStream.toList
     val extensions = filesInfo.map(tupled((file, ext, termination) => ext)).toSet
     filesInfo foreach { case (file, ext, termination) =>
-        if (!Set("Windows", "Linux").contains(termination)) {
+//        if (!Set("Windows", "Linux").contains(termination)) {
           println(termination + " - " + file)
-        }
+//        }
     }
     println
     println("extensions: " + extensions.toList.sorted.mkString(", "))
